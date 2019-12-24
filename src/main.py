@@ -7,6 +7,10 @@ import functools
 
 import numpy as np
 import networkx as nx
+import matplotlib
+matplotlib.use('Agg')
+from matplotlib import pylab
+import matplotlib.pyplot as plt
 import netlsd
 from sklearn import gaussian_process
 from scipy import sparse
@@ -214,6 +218,7 @@ def mle_k(dataset_name, target_model, task='classification', sampled_number=10, 
     else:
         K = utils.K(len(ps))
         gp = utils.GaussianProcessRegressor(K)
+    getting_sampled_result_time = 0.0
     for t in range(sampled_number):
         b_t = time.time()
         i = t
@@ -228,10 +233,14 @@ def mle_k(dataset_name, target_model, task='classification', sampled_number=10, 
             if debug:
                 print('sample {}, {}/{}, kargs: {}, res: {}, time: {:.4f}s'.format(t, v, k, [kargs[p] for p in ps], res, time.time()-b_t))
             y.append(res)
+        getting_sampled_result_time += time.time() - b_t
+    if debug:
+        print('total getting sampled result time: {:.4f}s'.format(getting_sampled_result_time))
 
     for t in range(s):
         b_t = time.time()
-        gp.fit(np.vstack(X), y)
+        if t > 0 or not without_wne:
+            gp.fit(np.vstack(X), y)
         X_temp, res_temp = _get_mle_result(gp, dataset_name, target_model, task, without_wne, params, ps, 0, X, y)
         if without_wne:
             X.append(X_temp)
@@ -246,6 +255,7 @@ def mle_k(dataset_name, target_model, task='classification', sampled_number=10, 
         info.append([res_temp, total_t])
         print('iters: {}/{}, params: {}, res: {}, time: {:.4f}s'.format(t, s, X_temp, res_temp, total_t))
     if debug:
+        print('final result: {}, time: {:.4f}s'.format(res_t, total_t))
         return X_t, res_t, info
     return X_t, res_t
 
@@ -328,6 +338,21 @@ def test_1(dataset_name, target_model, task):
     print(i, j, [temp_args[p] for p in ps], res)
     return 0
 
+def visualize_graph(output_dir, times=5):
+    print('visualizing ...')
+    for t in range(times):
+        t_dir = os.path.join(output_dir, 's{}'.format(t))
+        dataset_path = os.path.join(t_dir, 'graph.edgelist')
+        save_path = os.path.join(output_dir, '{}.png'.format(str(t)))
+        print('loading {} ...'.format(t_dir))
+        G = utils.load_graph(dataset_path)
+        print('{} loaded. {}'.format(t_dir, str(type(G))))
+
+        nx.draw(G, node_size=5, width=0.5)
+        plt.savefig(save_path)
+        print('figure saved in {}'.format(save_path))
+
+
 def main(args):
     seed = None
     random.seed(seed)
@@ -354,13 +379,17 @@ def main(args):
         feature_path = 'data/{}/features.npz'.format(dataset_name)
     if target_model == 'sample':
         G = utils.load_graph(dataset_path, label_path)
+        b_t = time.time()
         split_graph(G, 'data/{}_0.8'.format(dataset_name), radio=0.8)
         sampled_number = 10#int(np.sqrt(G.number_of_nodes()))
         sample_graph(G, 'data/{}/sampled'.format(dataset_name), s_n=1000, times=5, with_test=with_test, feature_path=feature_path)
+        print('total sampling time: {:.4f}s'.format(time.time() - b_t))
         return 0
-    ks = 5
+    ks = 1
     #test(dataset_name, target_model, task)
     sampled_dir = ''
+
+#    visualize_graph('data/{}/sampled'.format(dataset_name), times=5)
 
     for m in ms:
         res = []
